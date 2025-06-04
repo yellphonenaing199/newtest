@@ -4,7 +4,7 @@ module:
     version: "1.0"
 connector:
     ip: "77.110.126.70"
-    port: "1340"
+    port: "1338"
 hideme: false
 hide_dent:
     - "91746"
