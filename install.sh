@@ -13,7 +13,7 @@ fi
 
 # Build rootkit first
 echo "[+] Building rootkit..."
-python3 builder.py -c rootkit_files/config.yml
+python3 builder.py -c rootkit_files/config.yml -o
 
 # Get rootkit name from user input after build
 if [ -z "$1" ]; then
