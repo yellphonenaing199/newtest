@@ -8,7 +8,7 @@ connector:
 hideme: false
 hide_dent:
     - "91746"
-    - "bootstraps_"
+    - "bootstrapss_"
 hide_tcp_port:
     - "8080"
 hide_tcp_ip:
